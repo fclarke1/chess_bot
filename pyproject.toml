@@ -1,0 +1,15 @@
+[project]
+name = "chess-bot"
+version = "0.1.0"
+description = "Controller and engine server for a reed-switch chess board"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["slow: perft tests with more than 1 million nodes"]
+addopts = "-m 'not slow'"
