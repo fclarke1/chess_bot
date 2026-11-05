@@ -3,6 +3,8 @@
 # Pure Python for CPython and MicroPython: no dataclasses, typing, enum or
 # recursion. Squares are 0..63, a1 = 0, h1 = 7, a8 = 56.
 
+from array import array
+
 EMPTY = 0
 PAWN = 1
 KNIGHT = 2
@@ -63,16 +65,21 @@ def parse_square(text):
     return FILES.index(text[0]) + 8 * RANKS.index(text[1])
 
 
+# Each table is one flat bytearray of target squares and one array of start
+# offsets. Entry n covers squares[start[n]:start[n + 1]]. A tuple per square
+# costs about 40 KB of heap in MicroPython; this layout costs about 3.5 KB.
+
+
 def _step_targets(steps):
-    table = []
+    squares = bytearray()
+    start = array("H", [0])
     for sq in range(64):
         f, r = sq & 7, sq >> 3
-        targets = []
         for df, dr in steps:
             if 0 <= f + df < 8 and 0 <= r + dr < 8:
-                targets.append(sq + df + 8 * dr)
-        table.append(tuple(targets))
-    return tuple(table)
+                squares.append(sq + df + 8 * dr)
+        start.append(len(squares))
+    return squares, start
 
 
 # Directions 0-3 are rook directions, 4-7 are bishop directions.
@@ -80,24 +87,23 @@ _DIRECTIONS = ((0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (-1, 1), (1, -1), (-1, 
 
 
 def _rays():
-    table = []
+    """Entry sq * 8 + d is the ray from square sq in direction d, nearest square first."""
+    squares = bytearray()
+    start = array("H", [0])
     for sq in range(64):
-        rays = []
         for df, dr in _DIRECTIONS:
-            ray = []
             f, r = (sq & 7) + df, (sq >> 3) + dr
             while 0 <= f < 8 and 0 <= r < 8:
-                ray.append(f + 8 * r)
+                squares.append(f + 8 * r)
                 f += df
                 r += dr
-            rays.append(tuple(ray))
-        table.append(tuple(rays))
-    return tuple(table)
+            start.append(len(squares))
+    return squares, start
 
 
-KNIGHT_TARGETS = _step_targets(((1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)))
-KING_TARGETS = _step_targets(_DIRECTIONS)
-RAYS = _rays()
+KNIGHT_SQUARES, KNIGHT_START = _step_targets(((1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)))
+KING_SQUARES, KING_START = _step_targets(_DIRECTIONS)
+RAY_SQUARES, RAY_START = _rays()
 
 # Castling rights that stay after a move from or to each square.
 CASTLE_KEEP = bytearray([15] * 64)
@@ -207,12 +213,12 @@ class Board:
         """Return True if any piece of colour `by` attacks square `sq`."""
         b = self.squares
         knight = KNIGHT | by
-        for t in KNIGHT_TARGETS[sq]:
-            if b[t] == knight:
+        for i in range(KNIGHT_START[sq], KNIGHT_START[sq + 1]):
+            if b[KNIGHT_SQUARES[i]] == knight:
                 return True
         king = KING | by
-        for t in KING_TARGETS[sq]:
-            if b[t] == king:
+        for i in range(KING_START[sq], KING_START[sq + 1]):
+            if b[KING_SQUARES[i]] == king:
                 return True
         pawn = PAWN | by
         f = sq & 7
@@ -226,12 +232,12 @@ class Board:
                 return True
             if f < 7 and sq <= 54 and b[sq + 9] == pawn:
                 return True
-        rays = RAYS[sq]
+        base = sq * 8
         queen = QUEEN | by
         for d in range(8):
             straight = ROOK | by if d < 4 else BISHOP | by
-            for t in rays[d]:
-                p = b[t]
+            for i in range(RAY_START[base + d], RAY_START[base + d + 1]):
+                p = b[RAY_SQUARES[i]]
                 if p:
                     if p == straight or p == queen:
                         return True
@@ -257,17 +263,22 @@ class Board:
             if kind == PAWN:
                 self._pawn_moves(sq, moves)
             elif kind == KNIGHT or kind == KING:
-                table = KNIGHT_TARGETS if kind == KNIGHT else KING_TARGETS
-                for t in table[sq]:
+                if kind == KNIGHT:
+                    squares, start = KNIGHT_SQUARES, KNIGHT_START
+                else:
+                    squares, start = KING_SQUARES, KING_START
+                for i in range(start[sq], start[sq + 1]):
+                    t = squares[i]
                     q = b[t]
                     if q == EMPTY or (q & BLACK) == them:
                         add(sq | (t << 6))
             else:
-                rays = RAYS[sq]
+                base = sq * 8
                 first = 4 if kind == BISHOP else 0
                 last = 4 if kind == ROOK else 8
                 for d in range(first, last):
-                    for t in rays[d]:
+                    for i in range(RAY_START[base + d], RAY_START[base + d + 1]):
+                        t = RAY_SQUARES[i]
                         q = b[t]
                         if q == EMPTY:
                             add(sq | (t << 6))
