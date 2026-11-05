@@ -1,6 +1,6 @@
 # Game end checks. The controller ends a draw at once, with no claim.
 
-from controller.board import BISHOP, BLACK, EMPTY, KING, KNIGHT, WHITE
+from controller.board import BISHOP, EMPTY, KING, KNIGHT, WHITE
 
 MATE_WHITE_WINS = "mate_white_wins"
 MATE_BLACK_WINS = "mate_black_wins"
@@ -32,16 +32,13 @@ def insufficient_material(board):
     bishops = 0
     bishop_colours = set()
     for sq in range(64):
-        piece = board.squares[sq]
-        kind = piece & 7
-        if kind == EMPTY or kind == KING:
-            continue
+        kind = board.squares[sq] & 7
         if kind == KNIGHT:
             knights += 1
         elif kind == BISHOP:
             bishops += 1
             bishop_colours.add((sq + (sq >> 3)) & 1)
-        else:
+        elif kind != EMPTY and kind != KING:
             return False
     if knights + bishops <= 1:
         return True

@@ -29,12 +29,7 @@ class Game:
 
     def uci_moves(self):
         """The move list in UCI text, for the engine request and the saved game."""
-        board = Board()
-        texts = []
-        for move in self.moves:
-            texts.append(board.uci(move))
-            board.push(move)
-        return texts
+        return [self.board.uci(move) for move in self.moves]
 
     def repetitions(self):
         """How many times the current position has occurred, including now."""

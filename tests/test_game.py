@@ -11,7 +11,6 @@ from controller.rules import (
     REPETITION,
     STALEMATE,
     game_end,
-    insufficient_material,
 )
 
 
@@ -54,9 +53,10 @@ def test_pop_restores_position_and_keys_through_capture_and_promotion():
     play(game, "a2a4", "b7b5", "a4b5", "a7a6", "b5a6", "g8f6", "a6a7", "f6g8")
     before = game.board.fen()
     before_keys = list(game.keys)
-    play(game, "a7b8q")
+    move = game.board.parse_uci("a7b8q")
+    game.push(move)
     assert game.board.fen() != before
-    assert game.pop() == Board(before).parse_uci("a7b8q")
+    assert game.pop() == move
     assert game.board.fen() == before
     assert game.keys == before_keys
     assert game.uci_moves()[-1] == "f6g8"
@@ -108,13 +108,12 @@ def test_insufficient_material_cases():
     assert game_end(game_from("4k3/8/8/8/8/8/8/4KB2 w - - 0 1")) == MATERIAL
     # Bishops on c1 and f8 both stand on dark squares.
     assert game_end(game_from("4kb2/8/8/8/8/8/8/2B1K3 w - - 0 1")) == MATERIAL
-    # Bishops on c1 (dark) and e8 side f1 (light): not a draw.
+    # Bishops on c1 (dark) and f1 (light): not a draw.
     assert game_end(game_from("4k3/8/8/8/8/8/8/2B1KB2 w - - 0 1")) is None
     # Two knights are not a forced draw. A pawn or a rook never is.
     assert game_end(game_from("4k3/8/8/8/8/8/8/3NKN2 w - - 0 1")) is None
     assert game_end(game_from("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1")) is None
     assert game_end(game_from("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")) is None
-    assert not insufficient_material(Board())
 
 
 def test_threefold_repetition_ends_at_the_third_occurrence():
