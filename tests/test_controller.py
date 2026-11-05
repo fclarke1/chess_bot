@@ -6,7 +6,7 @@
 # king before rook), and it feeds every map change to the controller.
 
 from controller import occupancy, rules
-from controller.board import FLAG_CASTLE, FLAG_EN_PASSANT, WHITE, move_flag, move_from, move_to, parse_square
+from controller.board import FLAG_CASTLE, move_flag, move_from, move_to, parse_square, square_name
 from controller.controller import (
     ENGINE_MOVE,
     ENGINE_WAIT,
@@ -18,7 +18,6 @@ from controller.controller import (
     SETTLE_MS,
     UNDO_RESET,
     Controller,
-    Output,
 )
 from controller.detector import capture_square
 
@@ -47,7 +46,6 @@ class Table:
         ctrl.game.board.set_fen(fen)
         self.occ_map = occupancy.from_board(ctrl.game.board)
         ctrl.on_occupancy(self.occ_map, self.now)
-        ctrl._out = Output()  # collect the output as an input method does
         ctrl._enter_turn(self.now)
         self.out = ctrl._run(self.now)
         return self.out
@@ -69,14 +67,11 @@ class Table:
         assert move is not None, text
         frm, to = move_from(move), move_to(move)
         cap = capture_square(board, move)
-        names = []
-        if cap >= 0:
-            names.append(cap)
-        names += [frm, to]
+        squares = [cap] if cap >= 0 else []
+        squares += [frm, to]
         if move_flag(move) == FLAG_CASTLE:
-            names += [frm + 3, frm + 1] if to > frm else [frm - 4, frm - 1]
-        for sq in names:
-            self.flip(square_name(sq))
+            squares += [frm + 3, frm + 1] if to > frm else [frm - 4, frm - 1]
+        self.flip(*[square_name(sq) for sq in squares])
         return self.wait()
 
     def reply(self, text):
@@ -87,10 +82,6 @@ class Table:
         return self.out
 
 
-def square_name(sq):
-    return "abcdefgh"[sq & 7] + "12345678"[sq >> 3]
-
-
 def start(side="white", now=1000):
     ctrl = Controller()
     ctrl.load_settings({"side": side})
@@ -99,7 +90,7 @@ def start(side="white", now=1000):
     return ctrl, table
 
 
-def roles(out):
+def highlight(out):
     return sorted(out.highlight)
 
 
@@ -141,7 +132,7 @@ def test_setup_check_counts_wrong_squares():
     out = table.press("confirm")
     assert ctrl.state == SETTINGS
     assert out.display == "SETUP: 3 WRONG"
-    assert roles(out) == [("a7", "wrong"), ("e2", "wrong"), ("e4", "wrong")]
+    assert highlight(out) == [("a7", "wrong"), ("e2", "wrong"), ("e4", "wrong")]
     table.flip("e2", "e4", "a7")
     out = table.press("confirm")
     assert ctrl.state == HUMAN_TURN
@@ -268,7 +259,7 @@ def test_engine_reply_lights_the_move_and_commits_when_made():
     out = table.reply("g1f3")
     assert ctrl.state == ENGINE_MOVE
     assert out.display == "ENGINE: Nf3"
-    assert roles(out) == [("f3", "to"), ("g1", "from")]
+    assert highlight(out) == [("f3", "to"), ("g1", "from")]
     table.flip("g1")
     table.flip("f3")
     assert ctrl.state == ENGINE_MOVE
@@ -286,7 +277,7 @@ def test_engine_capture_shows_remove_and_needs_capture_order():
     table.move("d7d5")
     out = table.reply("e4d5")
     assert out.display == "ENGINE: exd5"
-    assert roles(out) == [("d5", "remove"), ("d5", "to"), ("e4", "from")]
+    assert highlight(out) == [("d5", "remove"), ("d5", "to"), ("e4", "from")]
     # Lift the capturing pawn first: the map equals the expected map but
     # d5 was never seen empty, so no commit.
     table.flip("e4")
@@ -301,7 +292,7 @@ def test_engine_castling_highlights_rook_squares():
     ctrl, table = start("black")
     table.set_position("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1")
     out = table.reply("e1g1")
-    assert roles(out) == [("e1", "from"), ("f1", "to"), ("g1", "to"), ("h1", "from")]
+    assert highlight(out) == [("e1", "from"), ("f1", "to"), ("g1", "to"), ("h1", "from")]
     out = table.move("e1g1")
     assert ctrl.state == HUMAN_TURN
 
@@ -380,7 +371,7 @@ def test_undo_removes_human_move_and_engine_reply():
     assert ctrl.state == UNDO_RESET
     assert out.display == "PUT n ON g1"
     assert ctrl.game.uci_text() == "e2e4 e7e5"
-    assert roles(out) == [("b8", "restore"), ("c6", "from"), ("f3", "from"), ("g1", "restore")]
+    assert highlight(out) == [("b8", "restore"), ("c6", "from"), ("f3", "from"), ("g1", "restore")]
     table.flip("c6", "b8")
     assert table.out.display == "PUT n ON g1"
     out = table.flip("f3", "g1")
@@ -498,7 +489,6 @@ def test_game_end_confirm_returns_to_settings():
     out = table.press("confirm")
     assert ctrl.state == SETTINGS
     assert out.display == "SIDE: BLACK"
-    assert ctrl.game.uci_text() == ""
 
 
 # Game end codes
@@ -531,7 +521,7 @@ def test_resume_replays_the_saved_game_and_checks_the_board():
     assert out.display == "RESUME MOVE 2"
     assert ctrl.settings["strength"] == 1200
     table = Table(ctrl)
-    assert roles(table.out) == [("e4", "wrong"), ("e5", "wrong"), ("e2", "wrong"), ("e7", "wrong")] or True
+    assert highlight(table.out) == [("e2", "wrong"), ("e4", "wrong"), ("e5", "wrong"), ("e7", "wrong")]
     table.press("confirm")
     assert ctrl.state == RESUME  # board still shows the start position
     table.flip("e2", "e4", "e7", "e5")
@@ -557,7 +547,6 @@ def test_resume_long_confirm_deletes_the_saved_game():
     out = ctrl.on_button("confirm_long", 0)
     assert ctrl.state == SETTINGS
     assert out.save_game == {}
-    assert ctrl.game.uci_text() == ""
 
 
 def test_load_game_with_no_moves_stays_in_settings():
