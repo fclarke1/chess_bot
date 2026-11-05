@@ -23,11 +23,11 @@ def from_text(text):
     """Parse 16 hex characters, as written in the event log."""
     if len(text) != 16:
         raise ValueError("occupancy text must have 16 hex characters: " + text)
-    return bytes(int(text[i:i + 2], 16) for i in range(0, 16, 2))
+    return bytes.fromhex(text)
 
 
 def to_text(occ_map):
-    return "".join("%02x" % b for b in occ_map)
+    return occ_map.hex()
 
 
 def diff(a, b):

@@ -5,7 +5,7 @@
 # needs only byte compares. See ARCHITECTURE.md, "Move detection".
 
 from controller import occupancy
-from controller.board import BLACK, EMPTY, FLAG_EN_PASSANT, WHITE, move_flag, move_from, move_promotion, move_to
+from controller.board import EMPTY, FLAG_EN_PASSANT, WHITE, move_flag, move_promotion, move_to
 
 
 def capture_square(board, move):
@@ -22,7 +22,6 @@ class Detector:
     def __init__(self, board):
         """`board` is the committed position. The detector does not keep it."""
         self.committed = occupancy.from_board(board)
-        self.current = self.committed
         # Squares that were occupied in the committed map and have read
         # empty since the last time the map equalled the committed map.
         self.emptied = set()
@@ -35,35 +34,27 @@ class Detector:
             board.pop()
 
     def update(self, occ_map):
-        """Record a new occupancy map and return the candidate moves."""
-        self.current = occ_map
+        """Record a new map and return the legal moves whose result map equals it.
+
+        A capture counts only when its capture square has read empty, so a
+        lifted piece alone never matches a capture (capture order).
+        """
         if occ_map == self.committed:
             self.emptied.clear()
         else:
-            for sq in occupancy.diff(occ_map, self.committed):
-                if not occupancy.occupied(occ_map, sq):
+            for sq in range(64):
+                if occupancy.occupied(self.committed, sq) and not occupancy.occupied(occ_map, sq):
                     self.emptied.add(sq)
-        return self.candidates()
-
-    def candidates(self):
-        """Legal moves whose result map is the current map.
-
-        A capture counts only when its capture square has read empty, so
-        a lifted piece alone never matches a capture (capture order).
-        """
         found = []
         for move, result, cap in self.moves:
-            if result == self.current and (cap < 0 or cap in self.emptied):
+            if result == occ_map and (cap < 0 or cap in self.emptied):
                 found.append(move)
         return found
 
 
 def is_promotion_set(moves):
-    """True when all moves are promotions of one pawn to one square."""
-    if not moves or not move_promotion(moves[0]):
-        return False
-    frm, to = move_from(moves[0]), move_to(moves[0])
-    for move in moves:
-        if not move_promotion(move) or move_from(move) != frm or move_to(move) != to:
-            return False
-    return True
+    """True when the candidates are promotions.
+
+    Candidates share one result map, so they move one pawn to one square.
+    """
+    return bool(moves) and move_promotion(moves[0]) != 0
