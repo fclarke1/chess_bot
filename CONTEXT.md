@@ -23,8 +23,12 @@ The hardware component that reads the reed switches and sends an occupancy map t
 _Avoid_: Sensor engine, sensor layer, hardware layer
 
 **Display**:
-A small screen that shows short text, for example the move number and messages to the human.
+A small screen that shows one line of 16 characters, for example the move number and messages to the human.
 _Avoid_: LED output, screen, LCD
+
+**Event log**:
+A text file on the ESP32 with one line per controller input and its time. A replay of the file gives the same controller outputs.
+_Avoid_: Trace, debug log, history file
 
 ### Board state
 

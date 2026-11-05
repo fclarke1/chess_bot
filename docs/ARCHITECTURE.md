@@ -14,7 +14,7 @@ Out of scope:
 
 - The sensor driver (reed switch reads and the removal delay).
 - The button driver, the display driver, and the LED driver.
-- The ESP32 main loop that connects these drivers to the controller. This document sets the rules that the main loop must obey (see "ESP32 main loop rules").
+- The real drivers for the ESP32. This repository holds a reference main loop (`esp32/main.py`) with stub drivers, so the controller and the HTTP client run on the device before the real drivers exist.
 
 ## Component map
 
@@ -90,7 +90,7 @@ Each input method returns one `Output` object:
 
 | Field | Meaning |
 |---|---|
-| `display` | Two lines of text, max 16 characters each. |
+| `display` | One line of text, max 16 characters. |
 | `highlight` | List of `(square, role)`. Roles: `from`, `to`, `remove`, `restore`, `wrong`. An empty list switches all LEDs off. |
 | `engine_request` | A dict for `POST /move`, or `None`. Each request has a new `request_id`, also a retry. |
 | `fetch_personalities` | `True` when the main loop must send `GET /personalities`. |
@@ -168,7 +168,7 @@ The castling order rule (king first) prevents a rook-first castle from committin
 ## Undo
 
 1. The human presses `undo`. The controller removes the last human move and the engine move after it, if there is one.
-2. The display shows the move to undo on line 1, for example `UNDO 12. Nf3`. Line 2 names the first piece to put back, if any, for example `PUT n ON e5`.
+2. The display shows the move to undo, for example `UNDO 12. Nf3`. While a captured piece is still missing, it names that piece instead, for example `PUT n ON e5`.
 3. The highlight gives `from` and `to` for each piece to move back, and `restore` for each captured piece to put back.
 4. When the occupancy map equals the earlier committed map for the settle time, the display shows `CORRECT` and the state is HUMAN_TURN.
 
@@ -205,13 +205,27 @@ Reply `200`: `{"request_id": 17, "move": "g1f3"}`. Reply `400` for a bad request
 - The Docker image sets `RODENT4PERSONALITIES` and `RODENT4BOOKS` and copies both folders.
 - The server restarts Rodent IV if the process stops.
 
-## ESP32 main loop rules
+## ESP32 main loop
 
-The main loop is out of scope, but the controller design needs these rules:
+`esp32/main.py` is a reference main loop. It runs on the ESP32 with stub drivers. The real drivers replace the stubs and keep the same functions.
 
 - The main loop uses MicroPython `asyncio`. The HTTP request runs as a task on a non-blocking socket, so the sensor reads, the button reads, and `on_tick` continue during an engine search. `urequests` blocks for the full search time and is not permitted.
 - The main loop checks the reply move again with the controller before it shows it (the controller does this in `on_engine_reply`).
 - The code goes to the ESP32 as `.mpy` files or frozen modules, so the device does not compile source text into its heap.
+- The main loop writes an event log (see below).
+
+## Event log
+
+The main loop appends one line to `/log.txt` for each controller input. The controller itself does not log. The format is plain text, so a terminal can read it and the desktop UI can replay it:
+
+```
+1200 M 00000000ffff00ff   occupancy map, 16 hex characters, rank 1 first
+1850 B confirm            button name
+4100 R 17 g1f3            engine reply: request id, move
+4100 E 17 timeout         engine error: request id, text
+```
+
+The number is `now_ms`. A replay feeds the lines to a new controller in order and must give the same outputs. The desktop UI can load a log file and step through it. The log restarts at each power-up, and the main loop deletes it when it is larger than 256 KB.
 
 ## MicroPython constraints on `controller/`
 
