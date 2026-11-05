@@ -6,7 +6,7 @@ Each step follows the loop in [CODE_LOOP.md](./CODE_LOOP.md). Each step ends wit
 |---|---|---|---|---|
 | 0 | `feat/board-move-generator` | `controller/board.py`: position, legal moves, FEN, UCI and SAN text | Perft for six standard positions; 49 tests | Done |
 | 1 | `feat/detector` | `occupancy.py` (8-byte map, diff, map from a position) and `detector.py` (candidates from the map sequence, capture rule, promotion set, `UNCLEAR`, `NO MATCH`) | Scenario tests: normal move, capture, en passant, castling king first, promotion, accidental lift, slide across a square, two captures that fit, put back and redo | Done |
-| 2 | `feat/game-rules` | `game.py` (move list, position keys, undo) and `rules.py` (checkmate, stalemate, insufficient material, threefold repetition, 50-move rule) | Rule tests; undo tests through captures and promotions | |
+| 2 | `feat/game-rules` | `game.py` (move list, position keys, undo) and `rules.py` (checkmate, stalemate, insufficient material, threefold repetition, 50-move rule) | Rule tests; undo tests through captures and promotions | Done |
 | 3 | `feat/controller` | `controller.py` state machine (9 states) and `protocol.py` (request build, reply check, request IDs) | Full games with a fake engine; every transition in ARCHITECTURE.md; undo during `ENGINE_WAIT`; resume after power loss | |
 | 4 | same | MicroPython runner for all controller tests | Runs under `-X heapsize=100K`; report free heap after an 80-move game | |
 | 5 | `feat/engine-server` | `server/Dockerfile` for Rodent IV on `linux/arm64`. Build and run on the Pi 4 first | `uci` and `go movetime 1000` answer in the container | |
@@ -19,6 +19,9 @@ Steps 1 to 4 need no hardware and no network. Step 5 needs the Pi. Step 7 needs 
 
 ## Facts for later steps
 
+- Step 3: `Game` has no move list of its own; `board.history` (5 ints per ply) and `board.ply` hold the game. A resume replays the saved UCI moves with `push()`.
+- Step 3: `rules.RESIGNATION` is the end code the controller sets on a long press; `game_end()` never returns it.
+- MicroPython heap: long-lived objects allocated one per ply (tuples, keys) fragment the heap and a list growth then fails at about ply 127. Keep per-ply state in flat arrays. Call `gc.collect()` after each commit in the main loop.
 - Step 3: the controller commits the engine move only when it is the single candidate. Two candidates give `UNCLEAR: REDO`.
 - Step 3: the controller keeps its own last occupancy map for the 3 s `NO MATCH` timer; the detector does not store it.
 - Step 3: `occupancy.diff` has no caller yet. It is for the `wrong` highlight in SETTINGS, ENGINE_WAIT, UNDO_RESET, and RESUME.
