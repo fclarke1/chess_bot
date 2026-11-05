@@ -5,7 +5,7 @@ Each step follows the loop in [CODE_LOOP.md](./CODE_LOOP.md). Each step ends wit
 | Step | Branch | Deliverable | Test | Status |
 |---|---|---|---|---|
 | 0 | `feat/board-move-generator` | `controller/board.py`: position, legal moves, FEN, UCI and SAN text | Perft for six standard positions; 49 tests | Done |
-| 1 | `feat/detector` | `occupancy.py` (8-byte map, diff, map from a position) and `detector.py` (candidates from the map sequence, capture rule, promotion set, `UNCLEAR`, `NO MATCH`) | Scenario tests: normal move, capture, en passant, castling king first, promotion, accidental lift, slide across a square, two captures that fit, put back and redo | |
+| 1 | `feat/detector` | `occupancy.py` (8-byte map, diff, map from a position) and `detector.py` (candidates from the map sequence, capture rule, promotion set, `UNCLEAR`, `NO MATCH`) | Scenario tests: normal move, capture, en passant, castling king first, promotion, accidental lift, slide across a square, two captures that fit, put back and redo | Done |
 | 2 | `feat/game-rules` | `game.py` (move list, position keys, undo) and `rules.py` (checkmate, stalemate, insufficient material, threefold repetition, 50-move rule) | Rule tests; undo tests through captures and promotions | |
 | 3 | `feat/controller` | `controller.py` state machine (9 states) and `protocol.py` (request build, reply check, request IDs) | Full games with a fake engine; every transition in ARCHITECTURE.md; undo during `ENGINE_WAIT`; resume after power loss | |
 | 4 | same | MicroPython runner for all controller tests | Runs under `-X heapsize=100K`; report free heap after an 80-move game | |
@@ -18,6 +18,12 @@ Each step follows the loop in [CODE_LOOP.md](./CODE_LOOP.md). Each step ends wit
 Steps 1 to 4 need no hardware and no network. Step 5 needs the Pi. Step 7 needs step 6. Steps 8 and 9 need the ESP32.
 
 ## Facts for later steps
+
+- Step 3: the controller commits the engine move only when it is the single candidate. Two candidates give `UNCLEAR: REDO`.
+- Step 3: the controller keeps its own last occupancy map for the 3 s `NO MATCH` timer; the detector does not store it.
+- Step 3: `occupancy.diff` has no caller yet. It is for the `wrong` highlight in SETTINGS, ENGINE_WAIT, UNDO_RESET, and RESUME.
+- Steps 7 and 8: `occupancy.from_text` and `to_text` give the event log format (16 hex characters).
+- `tests/micropython_run.py` runs pytest-free test modules in MicroPython. Add each new module to its `MODULES` tuple.
 
 - The display has one line of 16 characters. Every display text in ARCHITECTURE.md fits this size.
 - Snap MicroPython cannot read `/tmp`. Compiled `.mpy` files go to `build/mpy`.
