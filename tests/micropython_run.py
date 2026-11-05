@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, ".")
 
-MODULES = ("tests.test_detector",)
+MODULES = ("tests.test_detector", "tests.test_game")
 
 failures = 0
 count = 0
