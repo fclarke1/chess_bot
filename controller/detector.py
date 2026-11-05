@@ -53,8 +53,15 @@ class Detector:
 
 
 def is_promotion_set(moves):
-    """True when the candidates are promotions.
+    """True when all candidates are promotions to one square.
 
-    Candidates share one result map, so they move one pawn to one square.
+    Candidates share one result map, so they move one piece. A pawn with
+    two capture targets on the last rank gives promotions to two squares.
     """
-    return bool(moves) and move_promotion(moves[0]) != 0
+    if not moves or not move_promotion(moves[0]):
+        return False
+    to = move_to(moves[0])
+    for move in moves:
+        if move_to(move) != to:
+            return False
+    return True

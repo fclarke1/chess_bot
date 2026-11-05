@@ -161,9 +161,9 @@ The detector runs in HUMAN_TURN.
 6. **Several candidates of different moves.** The controller does not select one. The display shows `UNCLEAR: REDO`, and `confirm` has no effect. The human puts the pieces back to the committed map and makes the move again. Example: after Bxf7, the human lifts a d5 pawn to straighten it. Both Bxd5 and Bxf7 now fit, so the controller asks for the move again.
 7. **No candidate.** The display does not change. The human can hold a piece in the air for any time. The display shows `NO MATCH` only after the map is unchanged for 3 s and differs from the committed map.
 
-The engine move uses the same capture rule. The controller commits an engine capture only after it saw the capture square empty. Without this rule, a lift of the capturing piece gives the expected map before the piece reaches its square.
+The engine move uses the same detector. The controller commits the engine move only when it is the single candidate. With two candidates (the engine capture and a second capture by the same piece), the display shows `UNCLEAR: REDO`.
 
-The castling order rule (king first) prevents a rook-first castle from committing a rook move.
+Two limits of the occupancy map stay. The castling order rule (king first) prevents a rook-first castle from committing a rook move. A lifted piece whose capture target is knocked over and put back gives the same map as the completed capture; only the settle time protects against a commit while the piece is still in the hand.
 
 ## Undo
 
@@ -245,7 +245,7 @@ The number is `now_ms`. A replay feeds the lines to a new controller in order an
 ## Tests
 
 - **Move generator**: perft tests (counts of legal move sequences to a fixed depth) against published values for six standard positions.
-- **Detector**: scenario tests with lists of `(map, now_ms)` inputs: normal move, capture, capture with an accidental lift, a lift with no capture, castling, en passant, promotion, promotion with capture.
+- **Detector**: scenario tests with lists of occupancy maps (the detector has no clock): normal move, capture, capture with an accidental lift, a lift with no capture, castling, en passant, promotion, promotion with capture.
 - **Controller**: full games with a fake engine that returns fixed moves. Every state and every transition in "Controller states".
 - **Engine server**: tests with a fake UCI process. One test with the real Rodent IV in Docker.
 - **MicroPython**: the design target is a standard ESP32 without PSRAM (approximately 100 KB free heap). The `controller/` tests also run in the MicroPython Unix port with `-X heapsize=100K`. The Unix port has 64-bit small integers, so a final test runs on an ESP32.

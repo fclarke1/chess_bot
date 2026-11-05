@@ -196,3 +196,16 @@ def test_detector_leaves_the_board_unchanged():
     board = Board(fen)
     Detector(board)
     assert board.fen() == fen
+
+
+def test_capture_promotions_to_two_squares_are_not_a_promotion_set():
+    # Pawn b7, black rooks a8 and c8. The human knocks c8 over, then takes a8.
+    # Both bxa8 and bxc8 fit, so the controller must show UNCLEAR, not PROMOTION.
+    board = Board("r1r1k3/1P6/8/8/8/8/8/4K3 w - - 0 1")
+    det = Detector(board)
+    occ_map = det.committed
+    for name in ("b7", "c8", "c8", "a8", "a8"):
+        occ_map = flip(occ_map, name)
+        found = det.update(occ_map)
+    assert len(found) == 8
+    assert not is_promotion_set(found)

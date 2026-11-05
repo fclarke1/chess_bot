@@ -93,7 +93,7 @@ The step that makes a detected move part of the game. After a commit, the move c
 _Avoid_: Lock in, finalize, accept
 
 **Capture order**:
-The rule that the human removes the captured piece and keeps its square empty for at least 200 ms before placing the moving piece on that square. The controller accepts a capture only when it saw the capture square empty after the last commit.
+The rule that the human removes the captured piece and keeps its square empty for at least 200 ms before placing the moving piece on that square. The controller accepts a capture only when it saw the capture square empty since the last commit, or since the board last matched the committed map.
 _Avoid_: Capture delay, removal rule
 
 **Castling order**:
