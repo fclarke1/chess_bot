@@ -34,14 +34,14 @@ def game_from(fen):
 def test_new_game_starts_from_the_standard_position():
     game = Game()
     assert game.board.fen() == START_FEN
-    assert game.uci_moves() == []
+    assert game.uci_text() == ""
     assert game.repetitions() == 1
 
 
-def test_push_and_uci_moves():
+def test_push_and_uci_text():
     game = Game()
     play(game, "e2e4", "e7e5", "g1f3")
-    assert game.uci_moves() == ["e2e4", "e7e5", "g1f3"]
+    assert game.uci_text() == "e2e4 e7e5 g1f3"
     assert game.board.fullmove_number == 2
 
 
@@ -54,7 +54,7 @@ def test_pop_restores_position_and_keys_through_capture_and_promotion():
     assert game.board.fen() != before
     assert game.pop() == move
     assert game.board.fen() == before
-    assert game.uci_moves()[-1] == "f6g8"
+    assert game.uci_text().endswith("f6g8")
 
 
 def test_repetitions_count_the_current_position():
@@ -158,7 +158,7 @@ def test_pop_on_a_new_game_raises_and_changes_nothing():
     except IndexError:
         pass
     assert game.board.fen() == START_FEN
-    assert game.uci_moves() == []
+    assert game.uci_text() == ""
     assert game.repetitions() == 1
 
 
@@ -167,5 +167,5 @@ def test_long_game_fits_a_small_heap():
     game = Game()
     for i in range(300):
         play(game, ("g1f3", "g8f6", "f3g1", "f6g8")[i % 4])
-    assert len(game.uci_moves()) == 300
+    assert game.board.ply == 300
     assert game.repetitions() >= 3

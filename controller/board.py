@@ -116,7 +116,9 @@ CASTLE_KEEP[63] = 15 & ~CASTLE_BK
 
 
 class Board:
-    def __init__(self, fen=START_FEN):
+    def __init__(self, fen=START_FEN, reserve_plies=0):
+        """`reserve_plies` sizes the history array once, so a long game does not
+        grow it in a fragmented MicroPython heap."""
         self.squares = bytearray(64)
         self.turn = WHITE
         self.castling = 0
@@ -128,7 +130,8 @@ class Board:
         # halfmove_clock. One flat array, so a long game leaves no small
         # objects scattered through the MicroPython heap. pop() only
         # lowers ply; push() overwrites the slot.
-        self.history = array("i")
+        self.history = array("i", bytes(4 * 5 * reserve_plies))
+        self.reserved = reserve_plies
         self.ply = 0
         self.set_fen(fen)
 
@@ -377,7 +380,8 @@ class Board:
             captured = b[cap_sq]
             b[cap_sq] = EMPTY
         i = self.ply * 5
-        if i == len(self.history):
+        if self.ply >= self.reserved:
+            self.reserved += 1
             self.history.extend((move, captured, self.castling, self.ep_square, self.halfmove_clock))
         else:
             self.history[i] = move

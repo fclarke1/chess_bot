@@ -95,7 +95,7 @@ Each input method returns one `Output` object:
 | `engine_request` | A dict for `POST /move`, or `None`. Each request has a new `request_id`, also a retry. |
 | `fetch_personalities` | `True` when the main loop must send `GET /personalities`. |
 | `save_settings` | A dict to write to flash, or `None`. |
-| `save_game` | The settings and the move list to write to flash after each commit, or `None`. An empty dict after a game end deletes the saved game. |
+| `save_game` | The settings and the move text to write to flash after each commit, or `None`. An empty dict after a game end deletes the saved game. |
 
 ## Controller states
 
@@ -168,8 +168,8 @@ Two limits of the occupancy map stay. The castling order rule (king first) preve
 ## Undo
 
 1. The human presses `undo`. The controller removes the last human move and the engine move after it, if there is one.
-2. The display shows the move to undo, for example `UNDO 12. Nf3`. While a captured piece is still missing, it names that piece instead, for example `PUT n ON e5`.
-3. The highlight gives `from` and `to` for each piece to move back, and `restore` for each captured piece to put back.
+2. The display shows the move to undo, for example `UNDO 12. Nf3`. While a square of the earlier position is still empty, it names the piece for that square instead, for example `PUT n ON e5`.
+3. The highlight gives `from` for each square to clear and `restore` for each square to fill. The display names the piece for the first square to fill.
 4. When the occupancy map equals the earlier committed map for the settle time, the display shows `CORRECT` and the state is HUMAN_TURN.
 
 ## Engine server
@@ -181,11 +181,11 @@ All requests and replies are JSON.
 `POST /move`
 
 ```json
-{"request_id": 17, "start": "startpos", "moves": ["e2e4", "e7e5"],
+{"request_id": 17, "start": "startpos", "moves": "e2e4 e7e5",
  "personality": "tal", "strength": 1600, "movetime_ms": 3000}
 ```
 
-Reply `200`: `{"request_id": 17, "move": "g1f3"}`. Reply `400` for a bad request, an illegal move in the list, or `movetime_ms` outside 100 to 60000. Reply `503` if Rodent IV does not answer in `movetime_ms + 3000` ms.
+Reply `200`: `{"request_id": 17, "move": "g1f3"}`. `moves` is one text with the UCI moves separated by spaces, the same form as the UCI `position` command; a list of small strings fragments the ESP32 heap. Reply `400` for a bad request, an illegal move in the text, or `movetime_ms` outside 100 to 60000. Reply `503` if Rodent IV does not answer in `movetime_ms + 3000` ms.
 
 `GET /personalities` → `{"personalities": ["default", "tal", "defender", ...]}`
 
@@ -211,7 +211,8 @@ Reply `200`: `{"request_id": 17, "move": "g1f3"}`. Reply `400` for a bad request
 
 - The main loop uses MicroPython `asyncio`. The HTTP request runs as a task on a non-blocking socket, so the sensor reads, the button reads, and `on_tick` continue during an engine search. `urequests` blocks for the full search time and is not permitted.
 - The main loop checks the reply move again with the controller before it shows it (the controller does this in `on_engine_reply`).
-- The code goes to the ESP32 as `.mpy` files or frozen modules, so the device does not compile source text into its heap.
+- The code goes to the ESP32 as `.mpy` files or frozen modules, so the device does not compile source text into its heap. `tests/micropython_build.sh` compiles and runs the tests the same way.
+- The game board reserves its history for 300 plies at start-up. Long-lived data is allocated once; per-commit data is transient. This keeps the non-moving MicroPython heap from fragmentation.
 - The main loop writes an event log (see below).
 
 ## Event log

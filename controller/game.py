@@ -2,7 +2,9 @@
 # controller decides how many plies to pop. Every game starts from the
 # standard position; a resume replays the saved move list with push().
 
-from controller.board import PAWN, WHITE, Board
+from controller.board import PAWN, START_FEN, WHITE, Board
+
+MAX_PLIES = 300  # history reserved once (6 KB); a longer game still works
 
 
 def position_key(board):
@@ -25,7 +27,11 @@ def position_key(board):
 
 class Game:
     def __init__(self):
-        self.board = Board()
+        self.board = Board(reserve_plies=MAX_PLIES)
+
+    def reset(self):
+        """Start a new game in place. The controller keeps one Game for its whole life."""
+        self.board.set_fen(START_FEN)
 
     def push(self, move):
         self.board.push(move)
@@ -34,10 +40,18 @@ class Game:
         """Undo one ply and return the move. Raises IndexError on a new game."""
         return self.board.pop()
 
-    def uci_moves(self):
-        """The move list in UCI text, for the engine request and the saved game."""
+    def uci_text(self):
+        """The moves as one text, 'e2e4 e7e5 g1f3', for the engine request and the saved game.
+
+        One buffer instead of a list of small strings, which fragments the heap.
+        """
         board = self.board
-        return [board.uci(board.history[5 * i]) for i in range(board.ply)]
+        text = bytearray()
+        for i in range(board.ply):
+            if i:
+                text += b" "
+            text += board.uci(board.history[5 * i]).encode()
+        return str(text, "utf-8")
 
     def repetitions(self):
         """How many times the current position has occurred, including now.
