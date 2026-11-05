@@ -7,8 +7,8 @@ Each step follows the loop in [CODE_LOOP.md](./CODE_LOOP.md). Each step ends wit
 | 0 | `feat/board-move-generator` | `controller/board.py`: position, legal moves, FEN, UCI and SAN text | Perft for six standard positions; 49 tests | Done |
 | 1 | `feat/detector` | `occupancy.py` (8-byte map, diff, map from a position) and `detector.py` (candidates from the map sequence, capture rule, promotion set, `UNCLEAR`, `NO MATCH`) | Scenario tests: normal move, capture, en passant, castling king first, promotion, accidental lift, slide across a square, two captures that fit, put back and redo | Done |
 | 2 | `feat/game-rules` | `game.py` (move list, position keys, undo) and `rules.py` (checkmate, stalemate, insufficient material, threefold repetition, 50-move rule) | Rule tests; undo tests through captures and promotions | Done |
-| 3 | `feat/controller` | `controller.py` state machine (9 states) and `protocol.py` (request build, reply check, request IDs) | Full games with a fake engine; every transition in ARCHITECTURE.md; undo during `ENGINE_WAIT`; resume after power loss | |
-| 4 | same | MicroPython runner for all controller tests | Runs under `-X heapsize=100K`; report free heap after an 80-move game | |
+| 3 | `feat/controller` | `controller.py` state machine (9 states) and `protocol.py` (request build, reply check, request IDs) | Full games with a fake engine; every transition in ARCHITECTURE.md; undo during `ENGINE_WAIT`; resume after power loss | Done |
+| 4 | same | `tests/micropython_build.sh`: precompile to `.mpy`, run all tests and a random 200-ply game | Runs under `-X heapsize=100K`; 58 KB free after 200 plies | Done |
 | 5 | `feat/engine-server` | `server/Dockerfile` for Rodent IV on `linux/arm64`. Build and run on the Pi 4 first | `uci` and `go movetime 1000` answer in the container | |
 | 6 | same | `server/app.py` and `server/uci.py`: `/move`, `/personalities`, `/health`, `PersonalityFile` order, stop on a new request, legality check | Tests with a fake UCI process; one test with the real container | |
 | 7 | `feat/desktop-ui` | `desktop/app.py` and `static/index.html`: drag a piece, buttons, display text, highlight, piece types, replay of an event log | A full game against `pibot:8030` from this computer | |
@@ -18,6 +18,11 @@ Each step follows the loop in [CODE_LOOP.md](./CODE_LOOP.md). Each step ends wit
 Steps 1 to 4 need no hardware and no network. Step 5 needs the Pi. Step 7 needs step 6. Steps 8 and 9 need the ESP32.
 
 ## Facts for later steps
+
+- Steps 6 to 8: the engine request and the saved game carry `moves` as one text, `"e2e4 e7e5"`. The server splits it on spaces.
+- Step 8: the main loop must call `load_settings`, then `load_game`, then feed `on_personalities` when the list arrives. It writes `save_settings` and `save_game` to flash when they are not `None`; an empty `save_game` dict deletes the file.
+- Step 8: the controller package uses 30.6 KB of heap from `.mpy` files, plus 6 KB reserved history. Run the ESP32 with the controller as `.mpy` files in `/lib`.
+- Step 7: the desktop UI drives the controller with the same calls as `tests/test_controller.py` `Table`; reuse that pattern.
 
 - Step 3: `Game` has no move list of its own; `board.history` (5 ints per ply) and `board.ply` hold the game. A resume replays the saved UCI moves with `push()`.
 - Step 3: `rules.RESIGNATION` is the end code the controller sets on a long press; `game_end()` never returns it.
