@@ -124,7 +124,12 @@ class Board:
         self.halfmove_clock = 0
         self.fullmove_number = 1
         self.king_squares = [-1, -1]  # index 0 white, 1 black
-        self._history = []  # (move, captured piece, castling, ep_square, halfmove_clock)
+        # Five ints per ply: move, captured piece, castling, ep_square,
+        # halfmove_clock. One flat array, so a long game leaves no small
+        # objects scattered through the MicroPython heap. pop() only
+        # lowers ply; push() overwrites the slot.
+        self.history = array("i")
+        self.ply = 0
         self.set_fen(fen)
 
     # FEN
@@ -174,7 +179,7 @@ class Board:
         self.ep_square = -1 if fields[3] == "-" else parse_square(fields[3])
         self.halfmove_clock = int(fields[4])
         self.fullmove_number = int(fields[5])
-        self._history = []
+        self.ply = 0
 
     def fen(self):
         rows = []
@@ -371,7 +376,16 @@ class Board:
             cap_sq = to - 8 if us == WHITE else to + 8
             captured = b[cap_sq]
             b[cap_sq] = EMPTY
-        self._history.append((move, captured, self.castling, self.ep_square, self.halfmove_clock))
+        i = self.ply * 5
+        if i == len(self.history):
+            self.history.extend((move, captured, self.castling, self.ep_square, self.halfmove_clock))
+        else:
+            self.history[i] = move
+            self.history[i + 1] = captured
+            self.history[i + 2] = self.castling
+            self.history[i + 3] = self.ep_square
+            self.history[i + 4] = self.halfmove_clock
+        self.ply += 1
         b[to] = (promotion | us) if promotion else piece
         b[frm] = EMPTY
         if flag == FLAG_CASTLE:
@@ -394,8 +408,16 @@ class Board:
         self.turn = us ^ BLACK
 
     def pop(self):
-        """Unmake the last move and return it."""
-        move, captured, castling, ep_square, halfmove_clock = self._history.pop()
+        """Unmake the last move and return it. Raises IndexError with no move to unmake."""
+        if self.ply == 0:
+            raise IndexError("pop from a board with no moves")
+        self.ply -= 1
+        i = self.ply * 5
+        move = self.history[i]
+        captured = self.history[i + 1]
+        castling = self.history[i + 2]
+        ep_square = self.history[i + 3]
+        halfmove_clock = self.history[i + 4]
         b = self.squares
         frm = move & 63
         to = (move >> 6) & 63

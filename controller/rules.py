@@ -8,6 +8,7 @@ STALEMATE = "stalemate"
 MATERIAL = "insufficient_material"
 REPETITION = "threefold_repetition"
 FIFTY_MOVES = "fifty_moves"
+RESIGNATION = "resignation"  # set by the controller, never by game_end
 
 
 def game_end(game):

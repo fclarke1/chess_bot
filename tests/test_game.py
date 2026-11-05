@@ -25,7 +25,6 @@ def game_from(fen):
     """A game whose board holds `fen`. Only the position matters in these tests."""
     game = Game()
     game.board.set_fen(fen)
-    game.keys = [position_key(game.board)]
     return game
 
 
@@ -35,7 +34,6 @@ def game_from(fen):
 def test_new_game_starts_from_the_standard_position():
     game = Game()
     assert game.board.fen() == START_FEN
-    assert game.moves == []
     assert game.uci_moves() == []
     assert game.repetitions() == 1
 
@@ -45,20 +43,17 @@ def test_push_and_uci_moves():
     play(game, "e2e4", "e7e5", "g1f3")
     assert game.uci_moves() == ["e2e4", "e7e5", "g1f3"]
     assert game.board.fullmove_number == 2
-    assert len(game.keys) == 4
 
 
 def test_pop_restores_position_and_keys_through_capture_and_promotion():
     game = Game()
     play(game, "a2a4", "b7b5", "a4b5", "a7a6", "b5a6", "g8f6", "a6a7", "f6g8")
     before = game.board.fen()
-    before_keys = list(game.keys)
     move = game.board.parse_uci("a7b8q")
     game.push(move)
     assert game.board.fen() != before
     assert game.pop() == move
     assert game.board.fen() == before
-    assert game.keys == before_keys
     assert game.uci_moves()[-1] == "f6g8"
 
 
@@ -72,13 +67,18 @@ def test_repetitions_count_the_current_position():
     assert game.repetitions() == 2
 
 
-def test_position_key_includes_turn_castling_and_en_passant():
-    a = position_key(Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"))
-    b = position_key(Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"))
-    c = position_key(Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b Qkq - 0 1"))
-    d = position_key(Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1"))
+def test_position_key_includes_turn_castling_and_usable_en_passant():
+    # Black pawn on d4 can capture on e3, so the en passant square counts.
+    a = position_key(Board("rnbqkbnr/ppp1pppp/8/8/3pP3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"))
+    b = position_key(Board("rnbqkbnr/ppp1pppp/8/8/3pP3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"))
+    c = position_key(Board("rnbqkbnr/ppp1pppp/8/8/3pP3/8/PPPP1PPP/RNBQKBNR b Qkq - 0 1"))
+    d = position_key(Board("rnbqkbnr/ppp1pppp/8/8/3pP3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1"))
     assert len({a, b, c, d}) == 4
     assert len(a) == 67
+    # No pawn can capture on e3: the square does not count.
+    e = position_key(Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"))
+    f = position_key(Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"))
+    assert e == f
 
 
 # rules.py
@@ -131,3 +131,41 @@ def test_fifty_move_rule_at_100_plies():
 
 def test_mate_wins_over_fifty_moves():
     assert game_end(game_from("R5k1/5ppp/8/8/8/8/8/6K1 b - - 100 80")) == MATE_WHITE_WINS
+
+
+def test_unusable_en_passant_square_does_not_prevent_repetition():
+    # After 1.e4 no black pawn can capture on e3, so the position equals the
+    # one after the knights return (FIDE 9.2.2).
+    game = Game()
+    play(game, "e2e4", "g8f6", "g1f3", "f6g8", "f3g1", "g8f6", "g1f3", "f6g8", "f3g1")
+    assert game.repetitions() == 3
+    assert game_end(game) == REPETITION
+
+
+def test_usable_en_passant_square_makes_a_different_position():
+    game = game_from("rnbqkbnr/ppp1pppp/8/8/3p4/8/PPPPPPPP/RNBQKBNR w KQkq - 0 3")
+    play(game, "e2e4", "g8f6", "g1f3", "f6g8", "f3g1")
+    assert game.repetitions() == 1
+    play(game, "g8f6", "g1f3", "f6g8", "f3g1")
+    assert game.repetitions() == 2
+
+
+def test_pop_on_a_new_game_raises_and_changes_nothing():
+    game = Game()
+    try:
+        game.pop()
+        assert False, "pop on an empty game must raise"
+    except IndexError:
+        pass
+    assert game.board.fen() == START_FEN
+    assert game.uci_moves() == []
+    assert game.repetitions() == 1
+
+
+def test_long_game_fits_a_small_heap():
+    # 300 plies of knight moves with no capture; MicroPython runs this with a 100 KB heap.
+    game = Game()
+    for i in range(300):
+        play(game, ("g1f3", "g8f6", "f3g1", "f6g8")[i % 4])
+    assert len(game.uci_moves()) == 300
+    assert game.repetitions() >= 3
