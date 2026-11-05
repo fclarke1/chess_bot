@@ -78,6 +78,7 @@ class Controller:
         self.message = None  # text that replaces the state's display until the map changes
         self.end_code = None
         self.engine_move = None
+        self.engine_san = ""
         self.expected_map = None  # the occupancy map after the engine move
         self.request_id = 0
         self.retry_at = None
@@ -88,22 +89,41 @@ class Controller:
 
     def load_settings(self, data):
         self._out.fetch_personalities = True
-        if data:
-            self.settings.update(data)
+        self._apply_settings(data)
         return self._run(0)
 
     def load_game(self, data):
         if data and data.get("moves"):
-            self.settings.update(data.get("settings", {}))
+            self._apply_settings(data.get("settings"))
             self.game.reset()
             for text in data["moves"].split():
                 move = self.game.board.parse_uci(text)
                 if move is None:
-                    break
+                    self.game.reset()
+                    self._out.save_game = {}
+                    return self._run(0)
                 self.game.push(move)
-            self.detector = Detector(self.game.board)
-            self.state = RESUME
+            end = rules.game_end(self.game)
+            if end:
+                self._end_game(end)
+            else:
+                self.detector = Detector(self.game.board)
+                self.state = RESUME
         return self._run(0)
+
+    def _apply_settings(self, data):
+        """Take each saved value that is in its allowed list; keep the default for the rest."""
+        if not data:
+            return
+        s = self.settings
+        if data.get("side") in ("white", "black"):
+            s["side"] = data["side"]
+        if data.get("strength") in STRENGTHS:
+            s["strength"] = data["strength"]
+        if data.get("think_s") in THINK_SECONDS:
+            s["think_s"] = data["think_s"]
+        if isinstance(data.get("personality"), str):
+            s["personality"] = data["personality"]
 
     def on_personalities(self, names):
         if names:
@@ -135,11 +155,13 @@ class Controller:
                 self._engine_failed()
             else:
                 self.engine_move = move
+                self.engine_san = self.game.board.san(move)  # once; san() is slow on the ESP32
                 for candidate, result, cap in self.detector.moves:
                     if candidate == move:
                         self.expected_map = result
                 self.candidates = self.detector.update(self.occ_map)
                 self.map_since = self.now
+                self.retry_at = None
                 self.state = ENGINE_MOVE
         return self._run(self.now)
 
@@ -177,11 +199,13 @@ class Controller:
 
     def _settings_button(self, name):
         s = self.settings
+        self.message = None
         if name == "side":
             s["side"] = "black" if s["side"] == "white" else "white"
         elif name == "personality":
             names = self.personalities
-            s["personality"] = names[(names.index(s["personality"]) + 1) % len(names)]
+            i = names.index(s["personality"]) + 1 if s["personality"] in names else 0
+            s["personality"] = names[i % len(names)]
             if len(names) == 1:
                 self._out.fetch_personalities = True
         elif name == "strength":
@@ -204,11 +228,12 @@ class Controller:
         return WHITE if self.settings["side"] == "white" else BLACK
 
     def _enter_turn(self, now):
-        """After a commit, an undo, or a resume: the human's turn, or ask the engine."""
+        """After a start, a commit, an undo, or a resume: the human's turn, or ask the engine."""
         self.detector = Detector(self.game.board)
         self.candidates = self.detector.update(self.occ_map)
         self.message = None
         self.map_since = now
+        self._out.save_game = {"settings": dict(self.settings), "moves": self.game.uci_text()}
         if self.game.board.turn == self._human_side():
             self.state = HUMAN_TURN
         else:
@@ -217,17 +242,14 @@ class Controller:
     def _request_engine_move(self):
         self.request_id += 1
         self.retry_at = None
-        self.message = None
         self._out.engine_request = protocol.build_request(self.request_id, self.game, self.settings)
         self.state = ENGINE_WAIT
 
     def _engine_failed(self):
-        self.message = "ENGINE OFFLINE"
         self.retry_at = self.now + RETRY_MS
 
     def _commit(self, move, now):
         self.game.push(move)
-        self._out.save_game = {"settings": dict(self.settings), "moves": self.game.uci_text()}
         end = rules.game_end(self.game)
         if end:
             self._end_game(end)
@@ -256,12 +278,15 @@ class Controller:
                 else:
                     self.message = "UNCLEAR: REDO"
         elif self.state == ENGINE_MOVE and settled:
-            if candidates == [self.engine_move]:
+            if self.engine_move in candidates and (len(candidates) == 1 or is_promotion_set(candidates)):
                 self._commit(self.engine_move, now)
             elif len(candidates) > 1:
                 self.message = "UNCLEAR: REDO"
+            elif self.occ_map == self.expected_map:
+                # The capture square never read empty: the piece must come off first.
+                self.message = "LIFT " + square_name(capture_square(self.game.board, self.engine_move))
             elif self.occ_map != self.detector.committed:
-                self.message = "WRONG: " + self._san(self.engine_move)
+                self.message = "WRONG: " + self.engine_san
         elif self.state == UNDO_RESET and settled and self.occ_map == self.detector.committed:
             self._enter_turn(now)
             self.message = "CORRECT"
@@ -278,7 +303,10 @@ class Controller:
         if board.turn == human:
             self.game.pop()  # the engine move
         move = self.game.pop()  # the human move
-        self.undo_text = "UNDO %d. %s" % (board.fullmove_number, self._san(move))
+        san = self._san(move)
+        self.undo_text = "UNDO %d. %s" % (board.fullmove_number, san)
+        if len(self.undo_text) > 16:
+            self.undo_text = "UNDO " + san
         self.message = None
         self.detector = Detector(board)
         self.state = UNDO_RESET
@@ -321,9 +349,9 @@ class Controller:
         if state == PROMOTION:
             return "PROMOTE: Q R B N"
         if state == ENGINE_WAIT:
-            return "THINKING..."
+            return "ENGINE OFFLINE" if self.retry_at is not None else "THINKING..."
         if state == ENGINE_MOVE:
-            return "ENGINE: " + self._san(self.engine_move)
+            return "ENGINE: " + self.engine_san
         if state == UNDO_RESET:
             for sq in occupancy.diff(self.occ_map, self.detector.committed):
                 if not occupancy.occupied(self.occ_map, sq):

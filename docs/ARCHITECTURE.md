@@ -95,7 +95,7 @@ Each input method returns one `Output` object:
 | `engine_request` | A dict for `POST /move`, or `None`. Each request has a new `request_id`, also a retry. |
 | `fetch_personalities` | `True` when the main loop must send `GET /personalities`. |
 | `save_settings` | A dict to write to flash, or `None`. |
-| `save_game` | The settings and the move text to write to flash after each commit, or `None`. An empty dict after a game end deletes the saved game. |
+| `save_game` | The settings and the move text to write to flash after each game start, commit, undo, and resume, or `None`. An empty dict after a game end deletes the saved game. |
 
 ## Controller states
 
@@ -119,6 +119,7 @@ Each input method returns one `Output` object:
  ENGINE_WAIT  --error or illegal reply-----------------------> ENGINE_WAIT (ENGINE OFFLINE, retry 5 s)
  ENGINE_MOVE  --map = expected map + settle time, or confirm-> commit --> HUMAN_TURN
  ENGINE_MOVE  --map differs + settle time---------------------> ENGINE_MOVE (WRONG, wrong squares lit)
+ ENGINE_MOVE  --map = expected map, capture square never empty-> ENGINE_MOVE (LIFT d5)
 
  HUMAN_TURN, PROMOTION, ENGINE_WAIT, ENGINE_MOVE, GAME_END
               --undo, a human move exists---------------------> UNDO_RESET
@@ -132,7 +133,9 @@ Each input method returns one `Output` object:
  GAME_END     --confirm---------------------------------------> SETTINGS
 ```
 
-An undo from GAME_END after a resignation removes only the resignation. The board does not change, so the state goes to HUMAN_TURN at once.
+An undo from GAME_END after a resignation removes only the resignation. The board does not change. The state is HUMAN_TURN when the human is to move, or ENGINE_WAIT with a new request when the engine is to move.
+
+At start-up, a saved game whose position has already ended goes to GAME_END, and a saved move text with an illegal move is deleted.
 
 In ENGINE_WAIT, the controller compares each new occupancy map with the committed map. Each square that differs gets the role `wrong`, so the human sees a moved piece before the engine reply arrives.
 

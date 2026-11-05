@@ -348,10 +348,15 @@ def test_moved_piece_during_engine_wait_is_lit_wrong():
 # Undo
 
 
-def test_undo_with_no_human_move():
+def test_undo_with_no_move_at_all():
     ctrl, table = start("white")
     assert table.press("undo").display == "NOTHING TO UNDO"
     assert ctrl.state == HUMAN_TURN
+
+
+def test_undo_with_only_an_engine_move():
+    # One controller per test: each reserves 6 KB of history, and two in one
+    # test do not fit the fragmented MicroPython test heap.
     ctrl, table = start("black")
     table.reply("e2e4")
     table.move("e2e4")
@@ -581,3 +586,124 @@ def test_display_never_exceeds_sixteen_characters():
     ctrl.on_personalities(["a-very-long-personality-name"])
     out = ctrl.on_button("personality", 0)
     assert len(out.display) <= 16
+
+
+# Findings from the adversarial check
+
+
+def test_engine_promotion_commits():
+    ctrl, table = start("black")
+    table.set_position("4k3/P7/8/8/8/8/8/4K2R w - - 0 1")
+    out = table.reply("a7a8q")
+    assert out.display == "ENGINE: a8=Q+"
+    out = table.move("a7a8q")
+    assert ctrl.state == HUMAN_TURN
+    assert ctrl.game.uci_text() == "a7a8q"
+
+
+def test_settings_from_flash_outside_the_lists_fall_back():
+    ctrl = Controller()
+    ctrl.load_settings({"strength": 1650, "think_s": 4, "side": "WHITE", "personality": "tal"})
+    assert ctrl.settings["strength"] == 1600
+    assert ctrl.settings["think_s"] == 3
+    assert ctrl.settings["side"] == "white"
+    assert ctrl.settings["personality"] == "tal"
+    assert ctrl.on_button("strength", 0).display == "ELO: 1700"
+    assert ctrl.on_button("think_time", 0).display == "TIME: 5S"
+    # The personality list arrives without "tal": the first name replaces it.
+    ctrl.on_personalities(["default", "defender"])
+    assert ctrl.settings["personality"] == "default"
+    # A personality not in the list does not break the button.
+    ctrl.settings["personality"] = "gone"
+    assert ctrl.on_button("personality", 0).display == "PERS: default"
+    ctrl.load_game({"settings": None, "moves": "e2e4"})
+    assert ctrl.state == RESUME
+
+
+def test_undo_writes_the_saved_game():
+    ctrl, table = start("white")
+    table.move("e2e4")
+    table.reply("e7e5")
+    table.move("e7e5")
+    table.press("undo")
+    table.flip("e5", "e7", "e4", "e2")
+    out = table.wait()
+    assert out.display == "CORRECT"
+    assert out.save_game == {"settings": ctrl.settings, "moves": ""}
+
+
+def test_undo_after_resignation_writes_the_saved_game():
+    ctrl, table = start("white")
+    table.move("e2e4")
+    table.reply("e7e5")
+    table.move("e7e5")
+    assert table.press("confirm_long").save_game == {}
+    assert table.press("undo").save_game == {"settings": ctrl.settings, "moves": "e2e4 e7e5"}
+
+
+def test_game_start_writes_the_saved_game():
+    ctrl, table = start("white")
+    assert table.out.save_game == {"settings": ctrl.settings, "moves": ""}
+
+
+def test_settings_button_clears_the_setup_message():
+    ctrl = Controller()
+    ctrl.load_settings(None)
+    table = Table(ctrl)
+    table.flip("e2")
+    assert table.press("confirm").display == "SETUP: 1 WRONG"
+    assert table.press("side").display == "SIDE: BLACK"
+
+
+def test_late_reply_after_an_engine_error_shows_the_move():
+    ctrl, table = start("black")
+    request_id = table.out.engine_request["request_id"]
+    assert ctrl.on_engine_error(request_id, "timeout").display == "ENGINE OFFLINE"
+    assert table.flip("e7").display == "ENGINE OFFLINE"
+    table.flip("e7")
+    out = ctrl.on_engine_reply(request_id, "g1f3")
+    assert out.display == "ENGINE: Nf3"
+    assert table.wait(6000).engine_request is None  # no retry after the reply
+
+
+def test_resume_of_an_ended_game_shows_the_end():
+    ctrl = Controller()
+    out = ctrl.load_game({"settings": {"side": "black"}, "moves": "f2f3 e7e5 g2g4 d8h4"})
+    assert ctrl.state == GAME_END
+    assert out.display == "MATE: BLACK WINS"
+    assert out.save_game == {}
+
+
+def test_resume_with_a_bad_move_text_deletes_the_saved_game():
+    ctrl = Controller()
+    out = ctrl.load_game({"settings": {}, "moves": "e2e5 e7e5"})
+    assert ctrl.state == SETTINGS
+    assert out.save_game == {}
+
+
+def test_engine_san_is_computed_once():
+    ctrl, table = start("black")
+    table.reply("g1f3")
+    assert ctrl.engine_san == "Nf3"
+
+
+def test_undo_text_drops_the_move_number_when_too_long():
+    ctrl, table = start("white")
+    table.set_position("3rk3/4P3/8/8/8/8/8/4K3 w - - 0 100")
+    table.flip("d8", "e7", "d8")
+    table.wait()
+    table.press("promote_q")
+    table.press("undo")
+    out = table.flip("d8", "e7", "d8")
+    assert out.display == "UNDO exd8=Q+"
+
+
+def test_engine_capture_without_removal_asks_to_lift():
+    ctrl, table = start("black")
+    table.reply("e2e4")
+    table.move("e2e4")
+    table.move("d7d5")
+    table.reply("e4d5")
+    table.flip("e4")
+    out = table.wait()
+    assert out.display == "LIFT d5"
